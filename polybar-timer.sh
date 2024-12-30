@@ -21,9 +21,9 @@ minutesLeftWhenPaused () { echo $(( ( $(secondsLeftWhenPaused)  + 59 ) / 60 )) ;
 secondsLeft () { echo $(( $(timerExpiry) - $(now) )) ; }
 minutesLeft () { echo $(( ( $(secondsLeft)  + 59 ) / 60 )) ; }
 
-printExpiryTime () { dunstify -u low -r -12345 "Timer expires at $( date -d "$(secondsLeft) sec" +%H:%M)" ;}
-printPaused () { dunstify -u low -r -12345 "Timer paused" ; }
-removePrinting () { dunstify -C -12345 ; }
+#printExpiryTime () { dunstify -u low -r -12345 "Timer expires at $( date -d "$(secondsLeft) sec" +%H:%M)" ;}
+#printPaused () { dunstify -u low -r -12345 "Timer paused" ; }
+#removePrinting () { dunstify -C -12345 ; }
 
 updateTail () {
   # check whether timer is expired
@@ -31,9 +31,8 @@ updateTail () {
   then
     if { timerPaused && [ $(minutesLeftWhenPaused) -le 0 ] ; } || { ! timerPaused && [ $(minutesLeft) -le 0 ] ; }
     then
-      eval $(timerAction)
+      eval $(timerAction) 2>/dev/null 1>/dev/null
       killTimer
-      removePrinting
     fi
   fi
 
@@ -79,9 +78,7 @@ EOF
 case $1 in
   tail)
     STANDBY_LABEL=$2
-
     trap updateTail USR1
-
     while true
      do
      updateTail
@@ -93,13 +90,19 @@ case $1 in
     kill -USR1 $(pgrep --oldest --parent ${2})
     ;;
   new)
-    killTimer
     mkdir /tmp/polybar-timer
-    echo "$(( $(now) + 60*${2} ))" > /tmp/polybar-timer/expiry
-    echo "${3}" > /tmp/polybar-timer/label_running
-    echo "${4}" > /tmp/polybar-timer/label_paused
-    echo "${5}" > /tmp/polybar-timer/action
-    printExpiryTime
+	if [ -e /tmp/polybar-timer/expiry ]; then
+		initial=$(</tmp/polybar-timer/expiry)
+		echo "$(( $initial + (60*${2}) ))" > /tmp/polybar-timer/expiry
+		initial=$(</tmp/polybar-timer/expiry)
+	else
+		# initial timer value
+		echo "$(( $(now) + (60*${2}) ))" > /tmp/polybar-timer/expiry
+	fi
+
+	echo "${3}" > /tmp/polybar-timer/label_running
+	echo "${4}" > /tmp/polybar-timer/label_paused
+	echo "${5}" > /tmp/polybar-timer/action
     ;;
   increase)
     if timerSet
@@ -109,7 +112,6 @@ case $1 in
         echo "$(( $(secondsLeftWhenPaused) + ${2} ))" > /tmp/polybar-timer/paused
       else
         echo "$(( $(timerExpiry) + ${2} ))" > /tmp/polybar-timer/expiry
-        printExpiryTime
       fi
     else
       exit 1
@@ -117,7 +119,6 @@ case $1 in
     ;;
   cancel)
     killTimer
-    removePrinting
     ;;
   togglepause)
     if timerSet
@@ -126,11 +127,9 @@ case $1 in
       then
         echo "$(( $(now) + $(secondsLeftWhenPaused) ))" > /tmp/polybar-timer/expiry
         rm -f /tmp/polybar-timer/paused
-        printExpiryTime
       else
         secondsLeft > /tmp/polybar-timer/paused
         rm -f /tmp/polybar-timer/expiry
-        printPaused
       fi
     else
       exit 1
